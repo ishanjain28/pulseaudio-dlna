@@ -1,13 +1,15 @@
 use std::process::{Command, ExitStatus};
-use std::{env, fs, path, str, string};
+use std::{env, fs, path, process, str, string};
 use regex::Regex;
-use dbus;
+use dbus::{BusType, Connection, MessageItem, Props};
+use std::error::Error;
 
-struct Pulseaudio {
+pub struct Pulseaudio {
     streams: Vec<String>,
     sinks: Vec<String>,
     fallback_sink: Vec<String>,
     system_sinks: Vec<String>,
+    bus: Option<Connection>,
 }
 
 pub struct Modules;
@@ -92,15 +94,15 @@ impl Pulseaudio {
             sinks: vec![String::from("")],
             fallback_sink: vec![String::from("")],
             system_sinks: vec![String::from("")],
+            bus: None,
         }
     }
 
-    fn get_bus(&mut self) {
+    fn get_bus(&mut self) -> Result<Connection, &'static str> {
         let mods = match Modules::get() {
             Some(v) => v,
             None => {
-                println!("error in fetching modules");
-                return;
+                return Err("error in fetching modules");
             }
         };
 
@@ -111,15 +113,35 @@ impl Pulseaudio {
             None => match Modules::load(MODULE_DBUS_PROTOCOL, &[]) {
                 Some(v) => println!("loaded {}({})", MODULE_DBUS_PROTOCOL, v),
                 None => {
-                    println!("failed to load {}", MODULE_DBUS_PROTOCOL);
+                    return Err("failed to load module-dbus-protocol");
                 }
             },
         }
 
-        //TODO: Incomplete
+        // Get Pulseaudio DBUS urls using different methods.
+        let bus_addr = self.get_bus_addresses();
+
+        // Try connecting to pulse audio Dbus using one of the available url
+        for bus in bus_addr {
+            println!("Connecting to pulseaudio on {}", bus);
+
+            let conn = match Connection::open_private(&bus) {
+                Ok(v) => {
+                    println!("Connected to pulseaudio at {}", bus);
+                    return Ok(v);
+                }
+                Err(e) => {
+                    println!("error in connecting to pulseaudio at {}", e);
+                    continue;
+                }
+            };
+        }
+
+
+        Err("failed to connect to any available dbus addresses")
     }
 
-    fn get_bus_addresses(&mut self) {
+    fn get_bus_addresses(&mut self) -> Vec<String> {
         let mut bus_addresses: Vec<String> = Vec::new();
 
         // Probe PULSE_DBUS_SERVER
@@ -127,9 +149,7 @@ impl Pulseaudio {
             Ok(v) => for addr in v.split(";") {
                 bus_addresses.push(addr.to_owned());
             },
-            Err(e) => {
-                println!("failed to probe $PULSE_DBUS_SERVER {}", e);
-            }
+            Err(e) => println!("error in probing $PULSE_DBUS_SERVER: {}", e),
         };
 
 
@@ -141,7 +161,7 @@ impl Pulseaudio {
             Err(e) => {
                 println!("error in probing /run/pulse/dbus-socket {}", e);
             }
-        }
+        };
 
         // Probe XDG_RUNTIME_DIR
         match env::var("XDG_RUNTIME_DIR") {
@@ -165,21 +185,66 @@ impl Pulseaudio {
         // dbus_server_lookup
         let addr = self.dbus_server_lookup();
         match addr {
-            Some(v) => {}
-            None => {
-                println!("failed in dbus server lookup");
+            Ok(v) => {
+                bus_addresses.push(v);
+            }
+            Err(e) => {
+                println!("failed in dbus_server_lookup: {}", e);
             }
         };
+
+        // Remove duplicate items from bus_addresses
+        // There'll probably never be a lot of items in this vector
+        // So, It's okay to uses sort and dedup like this to remove all dups
+        bus_addresses.sort();
+        bus_addresses.dedup();
+
+        bus_addresses
     }
 
-    fn dbus_server_lookup(&mut self) -> Option<String> {
-        let conn = dbus::Connection::get_private(dbus::BusType::Session).unwrap();
-
-
-        return Some("ishan".to_owned());
+    fn dbus_server_lookup(&mut self) -> Result<String, String> {
+        let conn = Connection::get_private(BusType::Session).unwrap();
+        let prop = Props::new(
+            &conn,
+            "org.PulseAudio1",
+            "/org/pulseaudio/server_lookup1",
+            "org.freedesktop.DBus.Properties",
+            20,
+        );
+        match prop.get_all() {
+            Ok(v) => match v.get("Address") {
+                Some(r) => Ok(r.inner::<&str>().unwrap().to_owned()),
+                None => Err("dbus server address not found".to_owned()),
+            },
+            Err(e) => Err(e.to_string()),
+        }
     }
 
-    pub fn connect(&mut self, signals: &str) {}
+    pub fn connect<F>(&mut self, signals: &[(&str, &str, F)])
+    where
+        F: Fn(Self, &str, &str),
+    {
+        let bus = match self.get_bus() {
+            Ok(v) => v,
+            Err(e) => {
+                println!("{}", e);
+                process::exit(1);
+            }
+        };
+
+        let core = Props::new(
+            &bus,
+            "org.PulseAudio.Core1",
+            "/org/pulseaudio/core1",
+            "org.PulseAudio.Core1",
+            220,
+        );
+
+        let c = core.get("FallbackSink");
+
+
+        println!("{:?}", c);
+    }
 
     pub fn update_sinks(&mut self) {}
 
