@@ -1,7 +1,7 @@
 use std::process::{Command, ExitStatus};
 use std::{env, fs, path, process, str, string};
 use regex::Regex;
-use dbus::{BusType, Connection, MessageItem, Props};
+use dbus::{BusType, Connection, Message, MessageItem, Props};
 use std::error::Error;
 
 pub struct Pulseaudio {
@@ -13,6 +13,8 @@ pub struct Pulseaudio {
 }
 
 pub struct Modules;
+
+pub struct PulseWatcher;
 
 const MODULE_NULL_SINK: &str = "module-null-sink";
 const MODULE_DBUS_PROTOCOL: &str = "module-dbus-protocol";
@@ -80,12 +82,10 @@ impl Modules {
             .status()
             .expect(&format!(
                 "failed to unload module {} (\"pactl unload-module {}\")",
-                module,
-                module
+                module, module
             ))
     }
 }
-
 
 impl Pulseaudio {
     pub fn new() -> Pulseaudio {
@@ -137,7 +137,6 @@ impl Pulseaudio {
             };
         }
 
-
         Err("failed to connect to any available dbus addresses")
     }
 
@@ -151,7 +150,6 @@ impl Pulseaudio {
             },
             Err(e) => println!("error in probing $PULSE_DBUS_SERVER: {}", e),
         };
-
 
         // Probe /run/pulse/dbus-socket
         match fs::File::open("/run/pulse/dbus-socket") {
@@ -220,9 +218,10 @@ impl Pulseaudio {
         }
     }
 
+    // signals signature: signal_name, interface, signal_handler
     pub fn connect<F>(&mut self, signals: &[(&str, &str, F)])
     where
-        F: Fn(Self, &str, &str),
+        F: FnOnce(Result<&Message, Error>),
     {
         let bus = match self.get_bus() {
             Ok(v) => v,
@@ -240,10 +239,13 @@ impl Pulseaudio {
             220,
         );
 
-        let c = core.get("FallbackSink");
+        for signal in signals {
+            let msg = Message::new_method_call(signal.1, "/", signal.1, signal.0).unwrap();
 
-
-        println!("{:?}", c);
+            bus.add_handler(bus.send_with_reply(msg, move |reply| {
+                println!("{:?}", reply);
+            }).unwrap());
+        }
     }
 
     pub fn update_sinks(&mut self) {}
