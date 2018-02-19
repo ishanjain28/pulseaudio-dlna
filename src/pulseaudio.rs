@@ -241,10 +241,8 @@ impl Pulseaudio {
 
         for signal in signals {
             let msg = Message::new_method_call(signal.1, "/", signal.1, signal.0).unwrap();
-
-            bus.add_handler(bus.send_with_reply(msg, move |reply| {
-                println!("{:?}", reply);
-            }).unwrap());
+            //TODO:Fix the errors reported by compiler because of this next line.
+            //bus.add_handler(bus.send_with_reply(msg, signal.2).unwrap());
         }
     }
 

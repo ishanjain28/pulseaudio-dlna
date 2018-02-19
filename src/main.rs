@@ -7,6 +7,7 @@ use dbus::{BusType, Connection, Message, MessageItem, Props};
 use std::error::Error;
 
 mod pulseaudio;
+mod plugin;
 
 fn main() {
     let mods = pulseaudio::Modules::get();
@@ -28,10 +29,10 @@ fn main() {
 
     let z = |x: Result<&Message, Error>| {};
 
-    pa.connect(&[
-        ("NewPlaybackStream", "org.PulseAudio.Core1", x),
-        ("PlaybackStreamRemoved", "org.PulseAudio.Core1", y),
-        ("FallbackSinkUpdated", "org.PulseAudio.Core1", w),
-        ("DeviceUpdated", "org.PulseAudio.Core1", z),
-    ]);
+    //    pa.connect(&[
+    //      ("NewPlaybackStream", "org.PulseAudio.Core1", x),
+    //   ("PlaybackStreamRemoved", "org.PulseAudio.Core1", y),
+    //   ("FallbackSinkUpdated", "org.PulseAudio.Core1", w),
+    //  ("DeviceUpdated", "org.PulseAudio.Core1", z),
+    //  ]);
 }
