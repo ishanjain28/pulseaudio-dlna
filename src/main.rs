@@ -29,6 +29,8 @@ fn main() {
 
     let z = |x: Result<&Message, Error>| {};
 
+    plugin::dlna::render();
+
     //    pa.connect(&[
     //      ("NewPlaybackStream", "org.PulseAudio.Core1", x),
     //   ("PlaybackStreamRemoved", "org.PulseAudio.Core1", y),
