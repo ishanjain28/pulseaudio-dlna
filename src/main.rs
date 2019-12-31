@@ -4,7 +4,6 @@ extern crate dbus;
 extern crate lazy_static;
 extern crate regex;
 use dbus::{BusType, Connection, Message, MessageItem, Props};
-use std::error::Error;
 
 mod pulseaudio;
 mod plugin;
@@ -21,20 +20,13 @@ fn main() {
     //    );
 
     let mut pa = pulseaudio::Pulseaudio::new();
-
-    let x = |x: Result<&Message, Error>| {};
-    let y = |x: Result<&Message, Error>| {};
-
-    let w = |x: Result<&Message, Error>| {};
-
-    let z = |x: Result<&Message, Error>| {};
-
     plugin::dlna::render();
-
-    //    pa.connect(&[
-    //      ("NewPlaybackStream", "org.PulseAudio.Core1", x),
-    //   ("PlaybackStreamRemoved", "org.PulseAudio.Core1", y),
-    //   ("FallbackSinkUpdated", "org.PulseAudio.Core1", w),
-    //  ("DeviceUpdated", "org.PulseAudio.Core1", z),
-    //  ]);
+    //    let a = pulseaudio::Modules::get();
+    //   println!("{:?}", a);
+    pa.connect(&[
+        ("NewPlaybackStream", "org.PulseAudio.Core1"),
+        ("PlaybackStreamRemoved", "org.PulseAudio.Core1"),
+        ("FallbackSinkUpdated", "org.PulseAudio.Core1"),
+        ("DeviceUpdated", "org.PulseAudio.Core1.Stream"),
+    ]);
 }

@@ -23,6 +23,7 @@ impl SSDPDiscover {
             amount: 5,
         }
     }
+    fn refresh_address(self) {}
 }
 
 pub fn discover() {

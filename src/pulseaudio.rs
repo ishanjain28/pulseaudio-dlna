@@ -1,13 +1,11 @@
 use std::process::{Command, ExitStatus};
 use std::{env, fs, path, process, str, string};
 use regex::Regex;
-use dbus::{BusType, Connection, Message, MessageItem, Props};
-use std::error::Error;
-
-pub struct Pulseaudio {
+use dbus::{arg, BusType, Connection, Message, MessageItem, MessageItemArray, Props, Signature};
+pub struct Pulseaudio<'a> {
     streams: Vec<String>,
-    sinks: Vec<String>,
-    fallback_sink: Vec<String>,
+    sinks: Option<Props<'a>>,
+    fallback_sink: Option<Props<'a>>,
     system_sinks: Vec<String>,
     bus: Option<Connection>,
 }
@@ -15,6 +13,7 @@ pub struct Pulseaudio {
 pub struct Modules;
 
 pub struct PulseWatcher;
+pub struct PulseSink;
 
 const MODULE_NULL_SINK: &str = "module-null-sink";
 const MODULE_DBUS_PROTOCOL: &str = "module-dbus-protocol";
@@ -87,13 +86,13 @@ impl Modules {
     }
 }
 
-impl Pulseaudio {
-    pub fn new() -> Pulseaudio {
+impl<'a> Pulseaudio<'a> {
+    pub fn new() -> Pulseaudio<'static> {
         Pulseaudio {
-            streams: vec![String::from("")],
-            sinks: vec![String::from("")],
-            fallback_sink: vec![String::from("")],
-            system_sinks: vec![String::from("")],
+            streams: vec![String::new()],
+            sinks: None,
+            fallback_sink: None,
+            system_sinks: vec![String::new()],
             bus: None,
         }
     }
@@ -202,27 +201,22 @@ impl Pulseaudio {
 
     fn dbus_server_lookup(&mut self) -> Result<String, String> {
         let conn = Connection::get_private(BusType::Session).unwrap();
+
         let prop = Props::new(
             &conn,
             "org.PulseAudio1",
             "/org/pulseaudio/server_lookup1",
-            "org.freedesktop.DBus.Properties",
+            "org.PulseAudio.ServerLookup1",
             20,
         );
-        match prop.get_all() {
-            Ok(v) => match v.get("Address") {
-                Some(r) => Ok(r.inner::<&str>().unwrap().to_owned()),
-                None => Err("dbus server address not found".to_owned()),
-            },
+        match prop.get("Address") {
+            Ok(v) => Ok(v.inner::<&str>().unwrap().to_owned()),
             Err(e) => Err(e.to_string()),
         }
     }
 
     // signals signature: signal_name, interface, signal_handler
-    pub fn connect<F>(&mut self, signals: &[(&str, &str, F)])
-    where
-        F: FnOnce(Result<&Message, Error>),
-    {
+    pub fn connect(&mut self, signals: &[(&str, &str)]) {
         let bus = match self.get_bus() {
             Ok(v) => v,
             Err(e) => {
@@ -236,19 +230,36 @@ impl Pulseaudio {
             "org.PulseAudio.Core1",
             "/org/pulseaudio/core1",
             "org.PulseAudio.Core1",
-            220,
+            20,
         );
+        //        println!("CORE_ALL: {:?}", core.get_all());
 
         for signal in signals {
-            let msg = Message::new_method_call(signal.1, "/", signal.1, signal.0).unwrap();
-            //TODO:Fix the errors reported by compiler because of this next line.
-            //bus.add_handler(bus.send_with_reply(msg, signal.2).unwrap());
+            let msg =
+                Message::new_method_call(signal.1, "/org/pulseaudio/core1", signal.1, signal.0)
+                    .unwrap();
+            bus.add_handler(
+                bus.send_with_reply(msg, move |reply| println!("REPLY {:?}", reply))
+                    .unwrap(),
+            );
+            let full_path = format!("{}.{}", signal.1, signal.0);
+            println!("{}", full_path);
         }
+
+        let fallback_sink_path = core.get("FallbackSink");
+        let system_sink_paths = core.get("Sinks");
+
+        //        println!(
+        //            "FALLBACK_SINK_PATH: {:?} SYSTEM_SINK_PATHS: {:?}",
+        //            fallback_sink_path, system_sink_paths
+        //        );
+        //        PulseSink::new(&bus, fallback_sink_path.unwrap()
+        //
     }
 
     pub fn update_sinks(&mut self) {}
 
-    pub fn create_null_sink(&mut self, name: &str, desc: &str) {
+    pub fn create_sink(&mut self, name: &str, desc: &str) {
         let mod_id = Modules::load(
             MODULE_NULL_SINK,
             &[
@@ -265,7 +276,24 @@ impl Pulseaudio {
         }
     }
 
-    pub fn delete_null_sink(mod_id: u32) -> ExitStatus {
+    pub fn delete_sink(mod_id: u32) -> ExitStatus {
         Modules::unload(mod_id)
+    }
+}
+
+impl PulseSink {
+    fn new(bus: &Connection, sink_path: MessageItem) {
+        let core = Props::new(
+            &bus,
+            "org.Pulseaudio.Core1.Device",
+            sink_path.inner::<&str>().unwrap(),
+            "org.Pulseaudio.Core1.Device",
+            20,
+        );
+
+        let device = core.get("PropertyList");
+        let props_list = core.get("OwnerModule");
+
+        println!("{:?} {:?}", device, props_list);
     }
 }
